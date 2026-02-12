@@ -1,80 +1,90 @@
 import telebot
 from telebot import types
-import os
 from openpyxl import Workbook, load_workbook
+import os
 
+# --- Орнату ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = int(os.getenv("ADMIN_ID"))
-
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# 🚘 Mercedes модельдері (баға + сипаттама)
+# --- Mercedes модельдері ---
 cars = {
     "A-Class": {"price": 20000000, "desc": "Компакт класс, жастарға арналған стильді седан"},
-    "C-Class": {"price": 25000000, "desc": "Динамика мен статус үйлесімі. 2.0L Turbo, 204 ат күші, 0-100: 7.3с"},
-    "CLA": {"price": 28000000, "desc": "Купе стиліндегі премиум автомобиль, динамикасы жоғары"},
-    "E-Class": {"price": 35000000, "desc": "Бизнес класс стандарты. Комфорт пен технология балансы"},
+    "C-Class": {"price": 25000000, "desc": "Динамика мен статус үйлесімі"},
+    "CLA": {"price": 28000000, "desc": "Купе стиліндегі премиум автомобиль"},
+    "E-Class": {"price": 35000000, "desc": "Бизнес класс, комфорт пен технология"},
     "GLA": {"price": 32000000, "desc": "Компакт SUV, қала және жолға жарамды"},
     "GLB": {"price": 45000000, "desc": "7 орындық шағын люкс SUV"},
-    "S-Class": {"price": 60000000, "desc": "Люкс сегмент көшбасшысы. Максималды комфорт"},
-    "G-Class": {"price": 120000000, "desc": "Күш пен статус символы. Толық жетекті премиум SUV"},
+    "S-Class": {"price": 60000000, "desc": "Люкс сегмент көшбасшысы"},
+    "G-Class": {"price": 120000000, "desc": "Күш пен статус символы"},
     "EQE": {"price": 80000000, "desc": "Электрлік седан, премиум технологиялар"},
-    "EQS": {"price": 140000000, "desc": "Электрлік люкс седан, максималды комфорт және инновация"}
+    "EQS": {"price": 140000000, "desc": "Электрлік люкс седан, максималды комфорт"}
 }
 
 cities = ["Алматы", "Астана", "Шымкент"]
 
-# Excel жасау
+# --- Excel базасы ---
 if not os.path.exists("clients.xlsx"):
     wb = Workbook()
     ws = wb.active
     ws.append(["Name", "Phone", "City", "Car", "Date"])
     wb.save("clients.xlsx")
 
-# 🟢 START
-@bot.message_handler(commands=['start'])
-def start(message):
+# --- Негізгі меню ---
+def main_menu():
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
     markup.add("🚘 Модельдер", "💰 Бюджет бойынша таңдау")
     markup.add("📋 Тест-драйв", "🧩 Сізге қай тип көлік керек?")
+    return markup
 
+# --- /start ---
+@bot.message_handler(commands=['start'])
+def start(message):
     bot.send_message(
         message.chat.id,
-        "✨ Mercedes-Benz ресми цифрлық менеджеріне қош келдіңіз.\nПремиум әлемге қадам жасаңыз.",
-        reply_markup=markup
+        "✨ Mercedes-Benz ресми цифрлық менеджеріне қош келдіңіз.",
+        reply_markup=main_menu()
     )
 
-# Модельдер көрсету
+# --- Модельдерді Inline батырмамен көрсету ---
 @bot.message_handler(func=lambda m: m.text == "🚘 Модельдер")
 def show_cars(message):
-    text = "🚘 Қол жетімді модельдер:\n\n"
-    for name, info in cars.items():
-        text += f"{name} — {info['price']:,} ₸\n{info['desc']}\n\n"
-    bot.send_message(message.chat.id, text)
+    markup = types.InlineKeyboardMarkup()
+    for model in cars.keys():
+        markup.add(types.InlineKeyboardButton(model, callback_data=f"model_{model}"))
+    bot.send_message(message.chat.id, "Қандай модель қызықтырады?", reply_markup=markup)
 
-# Бюджет бойынша кеңес
+# --- Inline батырмаларды өңдеу ---
+@bot.callback_query_handler(func=lambda call: call.data.startswith("model_"))
+def model_info(call):
+    model = call.data.split("_")[1]
+    info = cars[model]
+    text = f"🚘 {model}\nБаға: {info['price']:,} ₸\n{info['desc']}"
+    bot.send_message(call.message.chat.id, text, reply_markup=main_menu())
+
+# --- Бюджет бойынша кеңес ---
 @bot.message_handler(func=lambda m: m.text == "💰 Бюджет бойынша таңдау")
 def ask_budget(message):
-    bot.send_message(message.chat.id, "Бюджетіңізді жазыңыз (мысалы: 40000000):")
+    bot.send_message(message.chat.id, "Бюджетіңізді жазыңыз (мысалы: 40000000):", reply_markup=main_menu())
 
 @bot.message_handler(func=lambda m: m.text.isdigit())
 def recommend_car(message):
     budget = int(message.text)
     recommended = None
-
     for name, info in cars.items():
         if budget >= info["price"]:
             recommended = name
-
     if recommended:
         bot.send_message(
             message.chat.id,
-            f"💎 Сізге {recommended} ұсынылады.\n{cars[recommended]['desc']}\n\nТест-драйв ұйымдастырайық па?"
+            f"💎 Сізге {recommended} ұсынылады.\n{cars[recommended]['desc']}",
+            reply_markup=main_menu()
         )
     else:
-        bot.send_message(message.chat.id, "Өкінішке орай бұл бюджетке модель жоқ.")
+        bot.send_message(message.chat.id, "Өкінішке орай бұл бюджетке модель жоқ.", reply_markup=main_menu())
 
-# Клиент типі бойынша ұсыныс
+# --- Клиент типі бойынша ұсыныс ---
 @bot.message_handler(func=lambda m: m.text == "🧩 Сізге қай тип көлік керек?")
 def recommend_type(message):
     markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
@@ -85,7 +95,6 @@ def recommend_type(message):
 def suggest_models(message):
     type_choice = message.text
     suggestions = []
-
     if type_choice == "Отбасы":
         suggestions = ["GLB", "GLA", "C-Class"]
     elif type_choice == "Жастар":
@@ -102,12 +111,12 @@ def suggest_models(message):
         info = cars[model]
         text += f"{model} — {info['price']:,} ₸\n{info['desc']}\n\n"
 
-    bot.send_message(message.chat.id, text)
+    bot.send_message(message.chat.id, text, reply_markup=main_menu())
 
-# Тест-драйв
+# --- Тест-драйв ---
 @bot.message_handler(func=lambda m: m.text == "📋 Тест-драйв")
 def test_drive(message):
-    bot.send_message(message.chat.id, "Атыңыз:")
+    bot.send_message(message.chat.id, "Атыңыз:", reply_markup=main_menu())
     bot.register_next_step_handler(message, get_name)
 
 def get_name(message):
@@ -120,17 +129,17 @@ def get_name(message):
 
 def get_city(message, name):
     city = message.text
-    bot.send_message(message.chat.id, "Телефон:")
+    bot.send_message(message.chat.id, "Телефон:", reply_markup=main_menu())
     bot.register_next_step_handler(message, get_phone, name, city)
 
 def get_phone(message, name, city):
     phone = message.text
-    bot.send_message(message.chat.id, "Қай модель?")
+    bot.send_message(message.chat.id, "Қай модель?", reply_markup=main_menu())
     bot.register_next_step_handler(message, get_car, name, city, phone)
 
 def get_car(message, name, city, phone):
     car = message.text
-    bot.send_message(message.chat.id, "Күні (15.02.2026 15:00):")
+    bot.send_message(message.chat.id, "Күні (мысалы: 15.02.2026 15:00):", reply_markup=main_menu())
     bot.register_next_step_handler(message, save_data, name, city, phone, car)
 
 def save_data(message, name, city, phone, car):
@@ -139,33 +148,31 @@ def save_data(message, name, city, phone, car):
     ws = wb.active
     ws.append([name, phone, city, car, date])
     wb.save("clients.xlsx")
-    bot.send_message(message.chat.id, "✅ Сұраныс қабылданды. Біз сізбен байланысамыз.")
+    bot.send_message(message.chat.id, "✅ Сұраныс қабылданды. Біз сізбен байланысамыз.", reply_markup=main_menu())
 
-# Статистика
+# --- Статистика (Admin) ---
 @bot.message_handler(commands=['stats'])
 def stats(message):
     if message.chat.id != ADMIN_ID:
         return
-
     wb = load_workbook("clients.xlsx")
     ws = wb.active
     counts = {}
     for row in ws.iter_rows(min_row=2, values_only=True):
         car = row[3]
         counts[car] = counts.get(car, 0) + 1
-
     text = "📊 Статистика:\n\n"
     for car, count in counts.items():
         text += f"{car} — {count} заявка\n"
-
     bot.send_message(message.chat.id, text)
 
-# Excel жүктеу
+# --- Excel жүктеу (Admin) ---
 @bot.message_handler(commands=['clients'])
 def send_excel(message):
     if message.chat.id == ADMIN_ID:
         with open("clients.xlsx", "rb") as f:
             bot.send_document(message.chat.id, f)
 
+# --- Запуск бота ---
 print("Bot running...")
 bot.infinity_polling()
