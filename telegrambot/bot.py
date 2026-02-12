@@ -1,99 +1,112 @@
 import telebot
 from telebot import types
-import os
 import openai
-import csv
-from datetime import datetime
+import os
+from openpyxl import Workbook, load_workbook
 
-TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_KEY = os.environ.get("OPENAI_KEY")
-ADMIN_ID = int(os.environ.get("ADMIN_ID"))
+# 🔐 ENV (Render-ге қоясың)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+OPENAI_KEY = os.getenv("OPENAI_KEY")
+ADMIN_ID = int(os.getenv("ADMIN_ID"))
 
-bot = telebot.TeleBot(TOKEN)
+bot = telebot.TeleBot(BOT_TOKEN)
 openai.api_key = OPENAI_KEY
 
-user_data = {}
-
+# 🚘 Mercedes модельдері
 cars = {
-    "Toyota Camry": "12 000 000 ₸",
-    "Hyundai Tucson": "10 500 000 ₸",
-    "BMW X5": "25 000 000 ₸"
+    "C-Class": "25 000 000 ₸",
+    "E-Class": "35 000 000 ₸",
+    "S-Class": "60 000 000 ₸",
+    "G-Class": "120 000 000 ₸"
 }
 
-# START
+# 📂 Excel файл жасау
+if not os.path.exists("clients.xlsx"):
+    wb = Workbook()
+    ws = wb.active
+    ws.append(["Name", "Phone", "Car", "Date"])
+    wb.save("clients.xlsx")
+
+# 🟢 START
 @bot.message_handler(commands=['start'])
 def start(message):
-    keyboard = types.ReplyKeyboardMarkup(resize_keyboard=True)
-    keyboard.add("🚗 Машиналар", "📝 Заявка")
-    bot.send_message(message.chat.id, "Қош келдіңіз! Таңдаңыз:", reply_markup=keyboard)
+    markup = types.ReplyKeyboardMarkup(resize_keyboard=True)
+    markup.add("🚘 Модельдер", "🤖 AI кеңесші")
+    markup.add("📋 Тест-драйв")
 
-# Машиналар
-@bot.message_handler(func=lambda m: m.text == "🚗 Машиналар")
+    bot.send_message(
+        message.chat.id,
+        "✨ Mercedes-Benz ресми менеджеріне қош келдіңіз!",
+        reply_markup=markup
+    )
+
+# 🚘 Модельдер
+@bot.message_handler(func=lambda m: m.text == "🚘 Модельдер")
 def show_cars(message):
-    text = "Қол жетімді машиналар:\n\n"
+    text = "🚘 Қол жетімді модельдер:\n\n"
     for car, price in cars.items():
         text += f"{car} — {price}\n"
     bot.send_message(message.chat.id, text)
 
-# Заявка бастау
-@bot.message_handler(func=lambda m: m.text == "📝 Заявка")
-def start_application(message):
+# 🤖 AI режим
+@bot.message_handler(func=lambda m: m.text == "🤖 AI кеңесші")
+def ai_mode(message):
+    bot.send_message(message.chat.id, "Сұрағыңызды жазыңыз:")
+
+@bot.message_handler(func=lambda m: True)
+def ai_chat(message):
+    if message.text in ["🚘 Модельдер", "📋 Тест-драйв"]:
+        return
+
+    response = openai.ChatCompletion.create(
+        model="gpt-3.5-turbo",
+        messages=[
+            {"role": "system", "content": "You are a luxury Mercedes-Benz sales consultant."},
+            {"role": "user", "content": message.text}
+        ]
+    )
+
+    bot.send_message(message.chat.id, response.choices[0].message.content)
+
+# 📋 Тест-драйв
+@bot.message_handler(func=lambda m: m.text == "📋 Тест-драйв")
+def test_drive(message):
     bot.send_message(message.chat.id, "Атыңыз:")
     bot.register_next_step_handler(message, get_name)
 
 def get_name(message):
-    user_data[message.chat.id] = {"name": message.text}
-    bot.send_message(message.chat.id, "Телефон номеріңіз:")
-    bot.register_next_step_handler(message, get_phone)
+    name = message.text
+    bot.send_message(message.chat.id, "Телефон:")
+    bot.register_next_step_handler(message, get_phone, name)
 
-def get_phone(message):
-    user_data[message.chat.id]["phone"] = message.text
-    bot.send_message(message.chat.id, "Күні мен уақыты:")
-    bot.register_next_step_handler(message, finish_application)
+def get_phone(message, name):
+    phone = message.text
+    bot.send_message(message.chat.id, "Қай модель?")
+    bot.register_next_step_handler(message, get_car, name, phone)
 
-def finish_application(message):
-    user_data[message.chat.id]["time"] = message.text
-    data = user_data[message.chat.id]
+def get_car(message, name, phone):
+    car = message.text
+    bot.send_message(message.chat.id, "Күні (15.02.2026 15:00):")
+    bot.register_next_step_handler(message, save_data, name, phone, car)
 
-    # CSV файлға сақтау
-    with open("applications.csv", "a", newline="", encoding="utf-8") as file:
-        writer = csv.writer(file)
-        writer.writerow([
-            datetime.now(),
-            data["name"],
-            data["phone"],
-            data["time"]
-        ])
+def save_data(message, name, phone, car):
+    date = message.text
 
-    # Админге жіберу
-    admin_text = f"""
-Жаңа заявка 🚗
+    wb = load_workbook("clients.xlsx")
+    ws = wb.active
+    ws.append([name, phone, car, date])
+    wb.save("clients.xlsx")
 
-Аты: {data['name']}
-Телефон: {data['phone']}
-Уақыты: {data['time']}
-"""
-    bot.send_message(ADMIN_ID, admin_text)
+    bot.send_message(message.chat.id, "✅ Сұраныс сақталды!")
 
-    bot.send_message(message.chat.id, "Заявка қабылданды ✅")
+# 📊 Excel тек admin көреді
+@bot.message_handler(commands=['clients'])
+def send_excel(message):
+    if message.chat.id == ADMIN_ID:
+        with open("clients.xlsx", "rb") as f:
+            bot.send_document(message.chat.id, f)
+    else:
+        bot.send_message(message.chat.id, "⛔ Рұқсат жоқ")
 
-# AI жауап
-@bot.message_handler(func=lambda message: True)
-def ai_chat(message):
-    try:
-        response = openai.ChatCompletion.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": "Сен автосалон менеджерісің."},
-                {"role": "user", "content": message.text}
-            ]
-        )
-        answer = response['choices'][0]['message']['content']
-        bot.send_message(message.chat.id, answer)
-    except:
-        bot.send_message(message.chat.id, "AI уақытша жұмыс істемей тұр.")
-
+print("Bot running...")
 bot.infinity_polling()
-
-
-
