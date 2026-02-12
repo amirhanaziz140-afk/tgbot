@@ -5,9 +5,9 @@ import openai
 import csv
 from datetime import datetime
 
-TOKEN = os.environ.get("BOT_TOKEN")
-OPENAI_KEY = os.environ.get("OPENAI_KEY")
-ADMIN_ID = int(os.environ.get("ADMIN_ID"))
+TOKEN = os.environ.get("8549064621:AAFu-HvFLr9avxBYuohyA3suqU_o_YXD7sg")
+OPENAI_KEY = os.environ.get("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")
+ADMIN_ID = int(os.environ.get("6671849554"))
 
 bot = telebot.TeleBot(TOKEN)
 openai.api_key = OPENAI_KEY
@@ -94,3 +94,4 @@ def ai_chat(message):
         bot.send_message(message.chat.id, "AI уақытша жұмыс істемей тұр.")
 
 bot.infinity_polling()
+
